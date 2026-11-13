@@ -1,0 +1,655 @@
+openapi: 3.0.3
+info:
+  title: API Demo - Luminárias Inteligentes
+  version: 1.0.0
+  description: |
+    API REST de demonstração para praticar Postman e leitura de documentação.
+
+    **O que dá para treinar aqui:**
+    - Filtros por **query string** em `GET /devices`
+    - Busca por **id via path params** em `GET /devices/{id}`
+    - CRUD completo (POST, PUT, PATCH, DELETE)
+    - Upload de arquivo com **multipart/form-data** em `POST /devices/{id}/attachments`
+    - Autenticação por **Bearer token**, com a diferença entre **401** e **403**
+
+    **Tokens de teste** (botão **Authorize**, no topo):
+    | Token | Perfil | Pode |
+    |---|---|---|
+    | `token-leitor-123` | viewer | ler `/secure/me` e `/secure/reports/faults` |
+    | `token-admin-456` | admin | tudo, incluindo reboot e apagar todos |
+
+    Os dados ficam salvos em `data/devices.json`. Use `POST /reset` para voltar ao estado inicial.
+
+servers:
+  - url: /
+    description: Este servidor (funciona em qualquer porta)
+  - url: http://localhost:3000
+    description: Local (porta padrão)
+
+tags:
+  - name: Básico
+    description: Health check e utilitários
+  - name: Dispositivos
+    description: CRUD com filtros por query e id por params (rotas públicas)
+  - name: Anexos
+    description: Upload e download de arquivos (multipart/form-data). Tipos aceitos PNG, JPEG, PDF, CSV e TXT, até 2 MB.
+  - name: Seguras
+    description: Exigem `Authorization Bearer <token>`. Sem token ou token inválido → 401; sem permissão → 403.
+
+paths:
+  /:
+    get:
+      tags: [Básico]
+      summary: Lista de rotas disponíveis
+      responses:
+        "200":
+          description: Nome da API e lista de rotas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  docs: { type: string }
+                  routes: { type: array, items: { type: string } }
+
+  /health:
+    get:
+      tags: [Básico]
+      summary: Health check
+      responses:
+        "200":
+          description: API no ar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: UP }
+                  time: { type: string, format: date-time }
+
+  /reset:
+    post:
+      tags: [Básico]
+      summary: Restaura os dados iniciais (8 dispositivos) e apaga os anexos
+      responses:
+        "200":
+          description: Dados restaurados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: Dados restaurados ao estado inicial. }
+                  total: { type: integer, example: 8 }
+
+  /devices:
+    get:
+      tags: [Dispositivos]
+      summary: Lista dispositivos com filtros por query string
+      description: |
+        Todos os filtros são opcionais e podem ser combinados.
+        Exemplo: `/devices?country=PT&status=fault&type=luminaria`
+      parameters:
+        - { $ref: "#/components/parameters/City" }
+        - { $ref: "#/components/parameters/Country" }
+        - name: status
+          in: query
+          description: Estado do dispositivo. Valor fora da lista → 400.
+          schema: { $ref: "#/components/schemas/Status" }
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/Type" }
+        - name: minDim
+          in: query
+          description: Nível de dim mínimo (0 a 100). Sensores (dimLevel null) são excluídos.
+          schema: { type: number, minimum: 0, maximum: 100 }
+          example: 50
+        - name: q
+          in: query
+          description: Pesquisa parcial no nome
+          schema: { type: string }
+          example: MAD
+        - name: sort
+          in: query
+          description: Campo de ordenação
+          schema:
+            type: string
+            enum: [id, name, city, country, type, status, dimLevel, lastSeen]
+            default: id
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          description: Itens por página (máximo 50)
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: Lista paginada
+          headers:
+            X-Total-Count:
+              description: Total de itens que correspondem aos filtros
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+    post:
+      tags: [Dispositivos]
+      summary: Cria um dispositivo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceInput" }
+            example:
+              name: LUM-FAR-0001
+              city: Faro
+              country: PT
+              type: luminaria
+              status: "on"
+              dimLevel: 70
+      responses:
+        "201":
+          description: Criado. O header Location aponta para o novo recurso.
+          headers:
+            Location:
+              description: URL do recurso criado
+              schema: { type: string, example: /devices/9 }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /devices/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/DeviceId" }
+
+    get:
+      tags: [Dispositivos]
+      summary: Busca um dispositivo pelo id (path param)
+      responses:
+        "200":
+          description: Dispositivo encontrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    put:
+      tags: [Dispositivos]
+      summary: Substitui o dispositivo inteiro
+      description: PUT exige o recurso **completo**. Campos ausentes → 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceInput" }
+            example:
+              name: LUM-LIS-0001
+              city: Lisboa
+              country: PT
+              type: luminaria
+              status: "off"
+              dimLevel: 0
+      responses:
+        "200":
+          description: Substituído
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+    patch:
+      tags: [Dispositivos]
+      summary: Altera só alguns campos
+      description: Envie apenas o que muda. Campos desconhecidos são ignorados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DevicePatch" }
+            examples:
+              dim:
+                summary: Mudar o dim
+                value: { dimLevel: 40 }
+              invalido:
+                summary: Valor inválido (gera 422)
+                value: { dimLevel: 150 }
+      responses:
+        "200":
+          description: Atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+    delete:
+      tags: [Dispositivos]
+      summary: Apaga um dispositivo
+      responses:
+        "204":
+          description: Apagado (sem body)
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /cities/{city}/devices:
+    get:
+      tags: [Dispositivos]
+      summary: Dispositivos de uma cidade (path param + query juntos)
+      parameters:
+        - name: city
+          in: path
+          required: true
+          description: Nome da cidade (não diferencia maiúsculas)
+          schema: { type: string }
+          example: Porto
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/Status" }
+      responses:
+        "200":
+          description: Dispositivos da cidade
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  city: { type: string, example: Porto }
+                  count: { type: integer, example: 1 }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+
+  /devices/{id}/attachments:
+    parameters:
+      - { $ref: "#/components/parameters/DeviceId" }
+    post:
+      tags: [Anexos]
+      summary: Envia um arquivo para o dispositivo (multipart/form-data)
+      description: |
+        O body **não é JSON**: é `multipart/form-data`, com o arquivo no campo `file`.
+
+        No Postman: **Body → form-data**, chave `file` com o tipo **File**, e opcionalmente a chave `description` do tipo Text.
+
+        Com curl:
+        ```
+        curl -F "file=@foto.jpg" -F "description=Foto da avaria" http://localhost:3000/devices/2/attachments
+        ```
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PNG, JPEG, PDF, CSV ou TXT, até 2 MB
+                description:
+                  type: string
+                  example: Foto da avaria
+      responses:
+        "201":
+          description: Arquivo recebido
+          headers:
+            Location:
+              description: URL para baixar o arquivo
+              schema: { type: string, example: /attachments/c6e66337-a190-4633-80a9-08007d38e0af }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attachment" }
+        "400":
+          description: Nenhum arquivo, mais de um arquivo ou campo com nome diferente de `file`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 400, code: MISSING_FILE, message: "Nenhum arquivo recebido. Use o campo 'file' do tipo File." }, requestId: 73fb34de-193a-4981-b43b-900826cf6316 }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: Arquivo maior que 2 MB
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: { status: 413, code: PAYLOAD_TOO_LARGE, message: Arquivo maior que o limite de 2 MB. }, requestId: 6bf6e39d-f7da-44c9-9f61-dfb7309183ce }
+        "415":
+          description: O body não é multipart/form-data, ou o tipo de arquivo não é permitido
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                notMultipart:
+                  value: { error: { status: 415, code: UNSUPPORTED_MEDIA_TYPE, message: "Envie o arquivo como multipart/form-data (no Postman: Body -> form-data, chave 'file' do tipo File)." }, requestId: f6597105-b79f-4350-ab20-c2397cc66052 }
+                wrongType:
+                  value: { error: { status: 415, code: UNSUPPORTED_FILE_TYPE, message: "Tipo 'application/x-msdownload' não permitido.", details: { allowed: [image/png, image/jpeg, application/pdf, text/csv, text/plain] } }, requestId: 7d3b3e68-866d-4af2-a6bc-3c06e46a89d9 }
+    get:
+      tags: [Anexos]
+      summary: Lista os anexos do dispositivo
+      responses:
+        "200":
+          description: Lista de anexos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deviceId: { type: integer, example: 2 }
+                  count: { type: integer, example: 1 }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Attachment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /attachments/{attachmentId}:
+    parameters:
+      - name: attachmentId
+        in: path
+        required: true
+        description: Id do anexo (UUID devolvido no upload)
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Anexos]
+      summary: Baixa o arquivo
+      description: Devolve o arquivo com o header `Content-Disposition attachment`, com o nome original.
+      responses:
+        "200":
+          description: O arquivo
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="foto.jpg"' }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Anexos]
+      summary: Apaga o anexo
+      responses:
+        "204":
+          description: Apagado
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /secure/me:
+    get:
+      tags: [Seguras]
+      summary: Quem sou eu (qualquer token válido)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Autenticado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated: { type: boolean, example: true }
+                  user: { type: string, example: joao.leitor }
+                  role: { type: string, enum: [viewer, admin], example: viewer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /secure/reports/faults:
+    get:
+      tags: [Seguras]
+      summary: Relatório de dispositivos em falha (qualquer token válido)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Relatório
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedBy: { type: string, example: joao.leitor }
+                  totalFaults: { type: integer, example: 2 }
+                  byCountry:
+                    type: object
+                    additionalProperties: { type: integer }
+                    example: { PT: 1, ES: 1 }
+                  devices:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /secure/devices/{id}/reboot:
+    post:
+      tags: [Seguras]
+      summary: Reinicia um dispositivo (apenas admin)
+      description: |
+        - Sem token → **401**
+        - `token-leitor-123` → **403** (autenticado, mas sem permissão)
+        - `token-admin-456` → **202**
+      security:
+        - bearerAuth: []
+      parameters:
+        - { $ref: "#/components/parameters/DeviceId" }
+      responses:
+        "202":
+          description: Reboot aceito
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: Reboot do dispositivo 2 aceito. }
+                  requestedBy: { type: string, example: maria.admin }
+                  device: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /secure/devices:
+    delete:
+      tags: [Seguras]
+      summary: Apaga TODOS os dispositivos (apenas admin)
+      description: Use `POST /reset` depois para restaurar.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Todos apagados
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Use `token-leitor-123` (viewer) ou `token-admin-456` (admin)."
+
+  parameters:
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      description: Id do dispositivo (inteiro positivo). Não numérico → 400; inexistente → 404.
+      schema: { type: integer, minimum: 1 }
+      example: 2
+    City:
+      name: city
+      in: query
+      description: Cidade (não diferencia maiúsculas)
+      schema: { type: string }
+      example: Lisboa
+    Country:
+      name: country
+      in: query
+      description: Código ISO do país
+      schema: { type: string, pattern: "^[A-Z]{2}$" }
+      example: PT
+
+  schemas:
+    Status:
+      type: string
+      enum: ["on", "off", "fault"]
+    Type:
+      type: string
+      enum: [luminaria, sensor]
+
+    Device:
+      type: object
+      properties:
+        id: { type: integer, example: 2 }
+        name: { type: string, example: LUM-LIS-0002 }
+        city: { type: string, example: Lisboa }
+        country: { type: string, example: PT }
+        type: { $ref: "#/components/schemas/Type" }
+        status: { $ref: "#/components/schemas/Status" }
+        dimLevel:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: Percentagem de intensidade. null para sensores.
+          example: 0
+        firmware: { type: string, example: 2.3.9 }
+        lastSeen: { type: string, format: date-time, example: "2026-11-11T22:40:00Z" }
+
+    DeviceInput:
+      type: object
+      required: [name, city, country, type, status]
+      description: O `id` é gerado pelo servidor e não pode ser enviado.
+      properties:
+        name: { type: string, description: Único. Duplicado → 409. }
+        city: { type: string }
+        country: { type: string, pattern: "^[A-Z]{2}$" }
+        type: { $ref: "#/components/schemas/Type" }
+        status: { $ref: "#/components/schemas/Status" }
+        dimLevel: { type: number, nullable: true, minimum: 0, maximum: 100 }
+        firmware: { type: string, default: 1.0.0 }
+
+    DevicePatch:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string }
+        city: { type: string }
+        country: { type: string, pattern: "^[A-Z]{2}$" }
+        type: { $ref: "#/components/schemas/Type" }
+        status: { $ref: "#/components/schemas/Status" }
+        dimLevel: { type: number, nullable: true, minimum: 0, maximum: 100 }
+        firmware: { type: string }
+
+    DeviceList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Device" }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer, example: 1 }
+            limit: { type: integer, example: 10 }
+            total: { type: integer, example: 1 }
+            totalPages: { type: integer, example: 1 }
+        filters:
+          type: object
+          description: Eco dos filtros recebidos
+          additionalProperties: true
+
+    Attachment:
+      type: object
+      properties:
+        id: { type: string, format: uuid, example: c6e66337-a190-4633-80a9-08007d38e0af }
+        deviceId: { type: integer, example: 2 }
+        originalName: { type: string, example: foto-avaria.jpg }
+        mimeType: { type: string, example: image/jpeg }
+        sizeBytes: { type: integer, example: 184320 }
+        description: { type: string, nullable: true, example: Foto da avaria }
+        sha256:
+          type: string
+          description: Hash do conteúdo. Serve para confirmar que o arquivo chegou íntegro.
+          example: 7f583da6f9a0ef956c17b11efac9d7eeeef371e8ee2d9b34a2281713b0814b02
+        uploadedAt: { type: string, format: date-time }
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            status: { type: integer }
+            code: { type: string }
+            message: { type: string }
+            details: {}
+        requestId:
+          type: string
+          format: uuid
+          description: Identificador do pedido, útil para achar nos logs
+
+  responses:
+    BadRequest:
+      description: Pedido mal formado (JSON inválido, id ou filtro inválido, body vazio)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            invalidId:
+              value: { error: { status: 400, code: INVALID_ID, message: "id inválido: 'abc'. Deve ser um inteiro positivo." }, requestId: a2b31385-f81e-4048-bc03-d651f1153e0e }
+            invalidJson:
+              value: { error: { status: 400, code: INVALID_JSON, message: O body não é um JSON válido. Verifique vírgulas e aspas. }, requestId: 9a4a512d-f783-4ff8-8d29-a74e6396f4de }
+    Unauthorized:
+      description: Não autenticado (sem header, formato errado ou token desconhecido)
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: 'Bearer realm="api-demo"' }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            missing:
+              value: { error: { status: 401, code: MISSING_TOKEN, message: "Header Authorization ausente. Envie: Authorization: Bearer <token>" }, requestId: 7b7519c0-a022-4908-8f7f-1bb6e517ca33 }
+            invalid:
+              value: { error: { status: 401, code: INVALID_TOKEN, message: Token inválido ou expirado. }, requestId: 19c479bb-7a2a-449d-96f4-fe533e74007a }
+    Forbidden:
+      description: Autenticado, mas o perfil não tem permissão
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 403, code: FORBIDDEN, message: "O perfil 'viewer' não tem permissão. Perfis permitidos: admin." }, requestId: c8b4e81f-246f-452b-825b-805bb316c7a7 }
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 404, code: NOT_FOUND, message: Dispositivo 99 não encontrado. }, requestId: cea5bcf5-8a4a-45e4-b465-5119490899b8 }
+    Conflict:
+      description: Já existe um dispositivo com o mesmo nome
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: { status: 409, code: CONFLICT, message: "Já existe um dispositivo com o nome 'LUM-FAR-0001'." }, requestId: 06e65ee6-0872-4a2e-a7ed-5f2924d4d1ca }
+    ValidationError:
+      description: Campos inválidos ou ausentes
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              status: 422
+              code: VALIDATION_ERROR
+              message: O corpo do pedido tem campos inválidos.
+              details:
+                - { field: city, issue: obrigatório }
+                - { field: status, issue: "deve ser um de: on, off, fault" }
+            requestId: 3f1d2c4b-0000-4000-8000-000000000000

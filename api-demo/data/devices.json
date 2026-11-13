@@ -1,0 +1,101 @@
+[
+  {
+    "id": 1,
+    "name": "LUM-LIS-0001",
+    "city": "Lisboa",
+    "country": "PT",
+    "type": "luminaria",
+    "status": "on",
+    "dimLevel": 80,
+    "firmware": "2.4.1",
+    "lastSeen": "2026-11-12T08:15:00Z"
+  },
+  {
+    "id": 2,
+    "name": "LUM-LIS-0002",
+    "city": "Lisboa",
+    "country": "PT",
+    "type": "luminaria",
+    "status": "fault",
+    "dimLevel": 0,
+    "firmware": "2.3.9",
+    "lastSeen": "2026-11-11T22:40:00Z"
+  },
+  {
+    "id": 3,
+    "name": "LUM-POR-0001",
+    "city": "Porto",
+    "country": "PT",
+    "type": "luminaria",
+    "status": "off",
+    "dimLevel": 0,
+    "firmware": "2.4.1",
+    "lastSeen": "2026-11-12T07:58:00Z"
+  },
+  {
+    "id": 4,
+    "name": "SEN-POR-0001",
+    "city": "Porto",
+    "country": "PT",
+    "type": "sensor",
+    "status": "on",
+    "dimLevel": null,
+    "firmware": "1.1.0",
+    "lastSeen": "2026-11-12T08:10:00Z"
+  },
+  {
+    "id": 5,
+    "name": "LUM-MAD-0001",
+    "city": "Madrid",
+    "country": "ES",
+    "type": "luminaria",
+    "status": "on",
+    "dimLevel": 60,
+    "firmware": "2.4.1",
+    "lastSeen": "2026-11-12T08:12:00Z"
+  },
+  {
+    "id": 6,
+    "name": "LUM-MAD-0002",
+    "city": "Madrid",
+    "country": "ES",
+    "type": "luminaria",
+    "status": "fault",
+    "dimLevel": 0,
+    "firmware": "2.2.0",
+    "lastSeen": "2026-11-10T19:05:00Z"
+  },
+  {
+    "id": 7,
+    "name": "LUM-BRU-0001",
+    "city": "Bruxelas",
+    "country": "BE",
+    "type": "luminaria",
+    "status": "on",
+    "dimLevel": 100,
+    "firmware": "2.4.1",
+    "lastSeen": "2026-11-12T08:14:00Z"
+  },
+  {
+    "id": 8,
+    "name": "SEN-BRU-0001",
+    "city": "Bruxelas",
+    "country": "BE",
+    "type": "sensor",
+    "status": "off",
+    "dimLevel": null,
+    "firmware": "1.0.3",
+    "lastSeen": "2026-11-12T06:30:00Z"
+  },
+  {
+    "id": 9,
+    "name": "LUM-FAR-755",
+    "city": "Faro",
+    "country": "PT",
+    "type": "luminaria",
+    "status": "on",
+    "dimLevel": 70,
+    "firmware": "1.0.0",
+    "lastSeen": "2026-11-13T11:17:25.706Z"
+  }
+]
